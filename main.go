@@ -120,7 +120,7 @@ func createDockerdockerfiles(packages []rpmPackage) error {
 		}
 
 		dockerfile := fmt.Sprintf(`FROM %s
-RUN dnf -y install %s-%s`, baseImage, rpm.name, rpm.version)
+RUN dnf -y install --allowerasing %s-%s`, baseImage, rpm.name, rpm.version)
 
 		if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0660); err != nil {
 			return fmt.Errorf("writing Dockerfile for %q: %v", rpm.name, err)
