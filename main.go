@@ -21,11 +21,13 @@ import (
 var (
 	flagBuild string
 	baseImage string
+	parallelBuilds int
 )
 
 func init() {
 	flag.StringVar(&flagBuild, "b", "", "Build all Dockerfiles under the specified directory")
 	flag.StringVar(&baseImage, "image", "registry.redhat.io/rhel9/rhel-bootc:latest", "Base container image to analyze")
+	flag.IntVar(&parallelBuilds, "j", 4, "Maximum number of parallel container builds")
 	flag.Parse()
 }
 
@@ -187,7 +189,7 @@ func buildImages(dir string) error {
 		return nil
 	})
 
-	sem := semaphore.NewWeighted(int64(4))
+	sem := semaphore.NewWeighted(int64(parallelBuilds))
 	ctx := context.Background()
 	ctr := atomic.Uint64{}
 	failedBuilds := []string{}
@@ -203,6 +205,7 @@ func buildImages(dir string) error {
 		}
 
 		go func() {
+			defer sem.Release(1)
 			localCtr := ctr.Add(1)
 			imageName := fmt.Sprintf("test-%d", localCtr)
 
@@ -211,8 +214,8 @@ func buildImages(dir string) error {
 			cmd := exec.Command("podman", "build", "-t", imageName,
 				"-v", fmt.Sprintf("%s:/var/cache/dnf:O", cacheDir), baseDir)
 
-			output, err := cmd.CombinedOutput()
-			if err != nil {
+			output, buildErr := cmd.CombinedOutput()
+			if buildErr != nil {
 				logpath += ".fail"
 				fmt.Printf("%s: failed: see build log\n", prefix)
 				failedBuilds = append(failedBuilds, dockerfile)
@@ -220,22 +223,25 @@ func buildImages(dir string) error {
 				fmt.Printf("%s: success\n", prefix)
 			}
 
-			if err := os.WriteFile(logpath, []byte(fmt.Sprintf("%s: %s", err, output)), 0660); err != nil {
+			if err := os.WriteFile(logpath, []byte(fmt.Sprintf("%s: %s", buildErr, output)), 0660); err != nil {
 				logrus.Errorf("Writing buildlog for %s", dockerfile)
+			}
+			
+			if buildErr != nil {
+				return
 			}
 
 			cmd = exec.Command("podman", "rmi", imageName)
 			if _, err := cmd.CombinedOutput(); err != nil {
 				logrus.Errorf("Removing image %s of %s: %s: %s", imageName, dockerfile, err, output)
 			}
-			sem.Release(1)
 		}()
 	}
 
 	if len(failedBuilds) > 0 {
 		fmt.Printf("The following builds failed:\n")
 		for _, fail := range failedBuilds {
-			fmt.Printf("* %s", fail)
+			fmt.Printf("* %s\n", fail)
 		}
 	}
 
