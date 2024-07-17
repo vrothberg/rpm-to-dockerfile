@@ -36,6 +36,7 @@ func main() {
 		if err := buildImages(flagBuild); err != nil {
 			panic(err)
 		}
+		return
 	}
 
 	packages, err := listAllPackages()
@@ -211,7 +212,7 @@ func buildImages(dir string) error {
 
 			prefix := fmt.Sprintf("%d/%d Building %s", localCtr, len(dockerfiles), dockerfile)
 
-			cmd := exec.Command("podman", "build", "-t", imageName,
+			cmd := exec.Command("podman", "build", "--no-cache", "-t", imageName,
 				"-v", fmt.Sprintf("%s:/var/cache/dnf:O", cacheDir), baseDir)
 
 			output, buildErr := cmd.CombinedOutput()
