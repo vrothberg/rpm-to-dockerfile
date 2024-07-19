@@ -19,21 +19,23 @@ import (
 )
 
 var (
-	flagBuild string
+	dockerfileDir string
 	baseImage string
 	parallelBuilds int
+	flagRebuild bool
 )
 
 func init() {
-	flag.StringVar(&flagBuild, "b", "", "Build all Dockerfiles under the specified directory")
-	flag.StringVar(&baseImage, "image", "registry.redhat.io/rhel9/rhel-bootc:latest", "Base container image to analyze")
+	flag.StringVar(&dockerfileDir, "dir", "", "Build all Dockerfiles under the specified directory")
+	flag.BoolVar(&flagRebuild, "rebuild", false, "Rebuild all failed builds in the -build directory")
+	flag.StringVar(&baseImage, "image", "registry.redhat.io/rhel9/rhel-bootc@sha256:76edd9792e9746e7e05857bb5e6dd26b81d3b6961604ec02b9588c6f72a7c77f", "Base container image to analyze")
 	flag.IntVar(&parallelBuilds, "j", 4, "Maximum number of parallel container builds")
 	flag.Parse()
 }
 
 func main() {
-	if len(flagBuild) > 0 {
-		if err := buildImages(flagBuild); err != nil {
+	if len(dockerfileDir) > 0 {
+		if err := buildImages(dockerfileDir); err != nil {
 			panic(err)
 		}
 		return
@@ -123,6 +125,7 @@ func createDockerdockerfiles(packages []rpmPackage) error {
 		}
 
 		dockerfile := fmt.Sprintf(`FROM %s
+RUN mkdir -p /var/lib
 RUN dnf -y install --allowerasing %s-%s`, baseImage, rpm.name, rpm.version)
 
 		if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0660); err != nil {
@@ -190,6 +193,10 @@ func buildImages(dir string) error {
 		return nil
 	})
 
+	if walkErr != nil {
+		return walkErr
+	}
+
 	sem := semaphore.NewWeighted(int64(parallelBuilds))
 	ctx := context.Background()
 	ctr := atomic.Uint64{}
@@ -197,6 +204,17 @@ func buildImages(dir string) error {
 	for _, dockerfile := range dockerfiles {
 		baseDir := filepath.Dir(dockerfile)
 		logpath := filepath.Join(baseDir, "buildlog")
+
+		if flagRebuild {
+			path := filepath.Join(baseDir, "buildlog.fail")
+			if _, err := os.Stat(path); err != nil {
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				logrus.Errorf("Removing previous buildlog: %v", err)
+			}
+			fmt.Printf("Rebuilding %s\n", dockerfile)
+		}
 
 		if err := sem.Acquire(ctx, 1); err != nil {
 			if err := os.WriteFile(logpath, []byte(fmt.Sprintf("%s", err)), 0660); err != nil {
@@ -246,5 +264,5 @@ func buildImages(dir string) error {
 		}
 	}
 
-	return walkErr
+	return nil
 }

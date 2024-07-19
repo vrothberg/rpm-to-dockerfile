@@ -14,7 +14,7 @@ Some of the intial 6842 packages are duplicates which are filtered before writin
 
 Each Dockerfile is writtin in a specific directory indicating the package name, version and repository, for instance `/tmp/RPM-Dockerfiles3159832664/zstd.x86_64-1.5.1-2.el9-System`.
 
-To build the Dockerfiles, run `go main.go -b /tmp/RPM-Dockerfiles3159832664`.
+To build the Dockerfiles, run `go main.go -dir /tmp/RPM-Dockerfiles3159832664`.
 It will first create a shared DNF cache to speed up builds and run 4 builds in parallel.
 You can use the `-j N` flag to change the number of parallel builds.
 
